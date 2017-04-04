@@ -14,6 +14,9 @@ const (
 	width	= 500
 	height	= 500
 
+	rows	= 10
+	columns	= 10
+
 	vertexShaderSource = `
 		#version 410
 		in vec3 vp;
@@ -32,12 +35,30 @@ const (
 )
 
 var (
-	triangle = []float32{
-		   0,  0.5, 0,	// top
-		-0.5, -0.5, 0,	// left
-		 0.5, -0.5, 0,	// right
+	square = []float32{
+		// bottom left right-triangle
+		-0.5,  0.5, 0,
+		-0.5, -0.5, 0,
+		 0.5, -0.5, 0,
+
+		// top right right-triangle
+		-0.5,  0.5, 0,
+		 0.5,  0.5, 0,
+		 0.5, -0.5, 0,
 	}
 )
+
+type cell struct {
+	drawable	uint32
+
+	x int
+	y int
+}
+
+func (c *cell) draw() {
+	gl.BindVertexArray(c.drawable)
+	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(square) / 3))
+}
 
 func main() {
 	runtime.LockOSThread()
@@ -47,21 +68,72 @@ func main() {
 
 	program := initOpenGL()
 
-	vao := makeVao(triangle)
+	cells := makeCells()
+
 	for !window.ShouldClose() {
-		draw(vao, window, program)
+		draw(cells, window, program)
 	}
 }
 
-func draw(vao uint32, window *glfw.Window, program uint32) {
+func draw(cells [][]*cell, window *glfw.Window, program uint32) {
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 	gl.UseProgram(program)
 
-	gl.BindVertexArray(vao)
-	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(triangle) / 3))
+	for x := range cells {
+		for _, c := range cells[x] {
+			c.draw()
+		}
+	}
 
 	glfw.PollEvents()
 	window.SwapBuffers()
+}
+
+func makeCells() [][]*cell {
+	cells := make([][]*cell, rows, rows)
+
+	for x := 0; x < rows; x++ {
+		for y := 0; y < columns; y++ {
+			c := newCell(x, y)
+			cells[x] = append(cells[x], c)
+		}
+	}
+
+	return cells
+}
+
+func newCell(x, y int) *cell {
+	points := make([]float32, len(square), len(square))
+	copy(points, square)
+
+	for i := 0; i < len(points); i++ {
+		var position float32
+		var size float32
+
+		switch i % 3 {
+		case 0:	// x-index of a point
+			size = 1.0 / float32(columns)
+			position = float32(x) * size
+		case 1:	// y-index of a point
+			size = 1.0/ float32(rows)
+			position = float32(y) * size
+		default:
+			continue
+		}
+
+		if points[i] < 0 {
+			points[i] = (position * 2) - 1
+		} else {
+			points[i] = ((position + size) * 2) - 1
+		}
+	}
+
+	return &cell{
+		drawable: makeVao(points),
+
+		x: x,
+		y: y,
+	}
 }
 
 /**
