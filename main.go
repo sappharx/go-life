@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/glfw/v3.2/glfw"
@@ -14,8 +16,12 @@ const (
 	width	= 500
 	height	= 500
 
-	rows	= 10
-	columns	= 10
+	rows	= 20
+	columns	= 20
+
+	fps	= 10
+
+	threshold	= 0.15
 
 	vertexShaderSource = `
 		#version 410
@@ -51,13 +57,89 @@ var (
 type cell struct {
 	drawable	uint32
 
+	alive		bool
+	aliveNext	bool
+
 	x int
 	y int
 }
 
 func (c *cell) draw() {
+	if !c.alive {
+		return
+	}
+
 	gl.BindVertexArray(c.drawable)
 	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(square) / 3))
+}
+
+/**
+ * checkState determines the state of the cell for the next tick of the game
+ */
+func (c *cell) checkState(cells [][]*cell) {
+	c.alive = c.aliveNext
+	c.aliveNext = c.alive
+
+	liveCount := c.liveNeighbors(cells)
+
+	if c.alive {
+		// any live cell with fewer than two live neighbors dies, as if caused by underpopulation
+		if liveCount < 2 {
+			c.aliveNext = false
+		}
+
+		// any live cell with two or three live neighbors lives on to the next generation
+		if liveCount == 2 || liveCount == 3	{
+			c.aliveNext = true
+		}
+
+		// any live cell with more than three live neighbors dies, as if by overpopulation
+		if liveCount > 3 {
+			c.aliveNext = false
+		}
+	} else {
+		// any dead cell with exactly three live neighbors becomes a live cell, as if by reproduction
+		if liveCount == 3 {
+			c.aliveNext = true
+		}
+	}
+}
+
+/**
+ * liveNeighbors returns the number of the live neighbors for a cell
+ */
+func (c *cell) liveNeighbors(cells [][]*cell) int {
+	var liveCount int
+
+	add := func(x, y int) {
+		// if we're at an edge, check the other side of the board
+		if x == len(cells) {
+			x = 0
+		} else if x == -1 {
+			x = len(cells) - 1
+		}
+
+		if y == len(cells[x]) {
+			y = 0
+		} else if y == -1 {
+			y = len(cells[x]) - 1
+		}
+
+		if cells[x][y].alive {
+			liveCount++
+		}
+	}
+
+	add(c.x - 1, c.y)		// to the left
+	add(c.x + 1, c.y)		// to the right
+	add(c.x, c.y + 1)		// up
+	add(c.x, c.y - 1)		// down
+	add(c.x - 1, c.y + 1)	// top-left
+	add(c.x + 1, c.y + 1)	// top-right
+	add(c.x - 1, c.y - 1)	// bottom-left
+	add(c.x + 1, c.y - 1)	// bottom-right
+
+	return liveCount
 }
 
 func main() {
@@ -71,7 +153,17 @@ func main() {
 	cells := makeCells()
 
 	for !window.ShouldClose() {
+		t := time.Now()
+
+		for x := range cells {
+			for _, c := range cells[x] {
+				c.checkState(cells)
+			}
+		}
+
 		draw(cells, window, program)
+
+		time.Sleep(time.Second / time.Duration(fps) - time.Since(t))
 	}
 }
 
@@ -90,11 +182,17 @@ func draw(cells [][]*cell, window *glfw.Window, program uint32) {
 }
 
 func makeCells() [][]*cell {
+	rand.Seed(time.Now().UnixNano())
+
 	cells := make([][]*cell, rows, rows)
 
 	for x := 0; x < rows; x++ {
 		for y := 0; y < columns; y++ {
 			c := newCell(x, y)
+
+			c.alive = rand.Float64() < threshold
+			c.aliveNext = c.alive
+
 			cells[x] = append(cells[x], c)
 		}
 	}
@@ -223,10 +321,10 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 		var logLength int32
 		gl.GetShaderiv(shader, gl.INFO_LOG_LENGTH, &logLength)
 
-		log := strings.Repeat("\x00", int(logLength + 1))
-		gl.GetShaderInfoLog(shader, logLength, nil, gl.Str(log))
+		logMsg := strings.Repeat("\x00", int(logLength + 1))
+		gl.GetShaderInfoLog(shader, logLength, nil, gl.Str(logMsg))
 
-		return 0, fmt.Errorf("failed to compile %v: %v", source, log)
+		return 0, fmt.Errorf("failed to compile %v: %v", source, logMsg)
 	}
 
 	return shader, nil
