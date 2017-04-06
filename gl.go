@@ -7,24 +7,12 @@ import (
 
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/glfw/v3.2/glfw"
+	"io/ioutil"
 )
 
 var (
-	vertexShaderSource = `
-		#version 410
-		in vec3 vp;
-		void main() {
-			gl_Position = vec4(vp, 1.0);
-		}
-	` + "\x00"
-
-	fragmentShaderSource = `
-		#version 410
-		out vec4 frag_colour;
-		void main() {
-			frag_colour = vec4(1, 1, 1, 1);
-		}
-	` + "\x00"
+	vertexShaderFile	= "vertexShader.glsl"
+	fragmentShaderFile	= "fragmentShader.glsl"
 )
 
 /**
@@ -62,6 +50,9 @@ func initOpenGL() uint32 {
 
 	version := gl.GoStr(gl.GetString(gl.VERSION))
 	log.Println("OpenGL version", version)
+
+	vertexShaderSource := readShaderFile(vertexShaderFile)
+	fragmentShaderSource := readShaderFile(fragmentShaderFile)
 
 	vertexShader, err := compileShader(vertexShaderSource, gl.VERTEX_SHADER)
 	if err != nil {
@@ -121,4 +112,14 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 	}
 
 	return shader, nil
+}
+
+func readShaderFile(filename string) string {
+	shaderSource, err := ioutil.ReadFile(filename)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return string(shaderSource) + "\x00"
 }
